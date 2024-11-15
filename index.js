@@ -24,17 +24,29 @@ const client = new Client({
 
 async function getPlayerIdBySteamId(steamId) {
   try {
-    const response = await axios.get(
-      `https://api.battlemetrics.com/players?filter[search]=${steamId}`,
+    const response = await axios.post(
+      "https://api.battlemetrics.com/players/match",
+      {
+        data: [
+          {
+            type: "identifier",
+            attributes: {
+              type: "steamID",
+              identifier: steamId,
+            },
+          },
+        ],
+      },
       {
         headers: {
-          Authorization: `Bearer ${process.env.BATTLEMETRICS_API_KEY}`,
+          Authorization: `Bearer ${BATTLEMETRICS_API_KEY}`,
+          "Content-Type": "application/json",
         },
       }
     );
 
     if (response.data && response.data.data && response.data.data.length > 0) {
-      return response.data.data[0].id;
+      return response.data.data[0].relationships.player.data.id;
     } else {
       return null;
     }
