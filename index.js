@@ -88,13 +88,13 @@ client.on("messageReactionAdd", async (reaction, user) => {
       .join("\n");
 
     const messageContent = `${message.content}\n${embedTexts}`.trim();
-    const steamIdMatch = messageContent.match(/\b\d{17}\b/);
+    const steamIdMatches = messageContent.matchAll(/\b\d{17}\b/g);
+    const steamIds = [...steamIdMatches].map((match) => match[0]);
 
-    if (!steamIdMatch) {
+    if (steamIds.length === 0) {
       return;
     }
 
-    const steamId = steamIdMatch[0];
     const note = messageContent;
     const timestamp = new Date().toISOString();
     let reason;
@@ -102,56 +102,61 @@ client.on("messageReactionAdd", async (reaction, user) => {
       reason = "Suspect is neutralized by the DP Anti-cheat (DPAC) system";
     if (reaction.emoji.name === "pepe_KMS")
       reason = "Причина бана: не игрок Perm, by Melomory";
-    const playerId = await getPlayerIdBySteamId(steamId);
-    const banData = {
-      data: {
-        type: "ban",
-        attributes: {
-          timestamp: timestamp,
-          reason: reason,
-          note: note,
-          expires: null,
-          identifiers: [
-            {
-              type: "steamID",
-              identifier: steamId,
-              manual: true,
+
+    for (const steamId of steamIds) {
+      const playerId = await getPlayerIdBySteamId(steamId);
+      const banData = {
+        data: {
+          type: "ban",
+          attributes: {
+            timestamp: timestamp,
+            reason: reason,
+            note: note,
+            expires: null,
+            identifiers: [
+              {
+                type: "steamID",
+                identifier: steamId,
+                manual: true,
+              },
+            ],
+            orgWide: true,
+            autoAddEnabled: true,
+            nativeEnabled: null,
+          },
+          relationships: {
+            server: {
+              data: { type: "server", id: SERVER_ID },
             },
-          ],
-          orgWide: true,
-          autoAddEnabled: true,
-          nativeEnabled: null,
-        },
-        relationships: {
-          server: {
-            data: { type: "server", id: SERVER_ID },
-          },
-          organization: {
-            data: { type: "organization", id: ORGANIZATION_ID },
-          },
-          banList: {
-            data: { type: "banList", id: BAN_LIST_ID },
-          },
-          user: {
-            data: { type: "user", id: USER_ID },
+            organization: {
+              data: { type: "organization", id: ORGANIZATION_ID },
+            },
+            banList: {
+              data: { type: "banList", id: BAN_LIST_ID },
+            },
+            user: {
+              data: { type: "user", id: USER_ID },
+            },
           },
         },
-      },
-    };
-
-    if (playerId) {
-      banData.data.relationships.player = {
-        data: { type: "player", id: playerId },
       };
-    }
 
-    await axios.post("https://api.battlemetrics.com/bans", banData, {
-      headers: {
-        Authorization: `Bearer ${BATTLEMETRICS_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-    });
-  } catch (error) {}
+      if (playerId) {
+        banData.data.relationships.player = {
+          data: { type: "player", id: playerId },
+        };
+      }
+
+      await axios.post("https://api.battlemetrics.com/bans", banData, {
+        headers: {
+          Authorization: `Bearer ${BATTLEMETRICS_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      });
+    }
+  } catch (error) {
+    console.error("Ошибка при обработке реакции:", error);
+  }
 });
 
 client.login(BOT_TOKEN);
