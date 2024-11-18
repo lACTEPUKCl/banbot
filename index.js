@@ -89,9 +89,11 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
     const messageContent = `${message.content}\n${embedTexts}`.trim();
     const steamIdMatches = messageContent.matchAll(/\b\d{17}\b/g);
-    const steamIds = [...steamIdMatches].map((match) => match[0]);
+    const uniqueSteamIds = [
+      ...new Set([...steamIdMatches].map((match) => match[0])),
+    ];
 
-    if (steamIds.length === 0) {
+    if (uniqueSteamIds.length === 0) {
       return;
     }
 
@@ -103,7 +105,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
     if (reaction.emoji.name === "pepe_KMS")
       reason = "Причина бана: не игрок Perm, by Melomory";
 
-    for (const steamId of steamIds) {
+    for (const steamId of uniqueSteamIds) {
       const playerId = await getPlayerIdBySteamId(steamId);
       const banData = {
         data: {
