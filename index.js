@@ -5,13 +5,31 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const BATTLEMETRICS_API_KEY = process.env.BATTLEMETRICS_API_KEY;
-const SERVER_ID = process.env.BATTLEMETRICS_SERVERID;
-const ORGANIZATION_ID = process.env.BATTLEMETRICS_ORGID;
-const BAN_LIST_ID = process.env.BATTLEMETRICS_BANLISTID;
-const USER_ID = process.env.BATTLEMETRICS_USERID;
 const ALLOWED_USER_ID = process.env.ALLOWED_USER_ID;
 const TARGET_EMOJI = ["Masla", "pepe_KMS"];
+
+const ORGANIZATIONS = [
+  {
+    organizationId: process.env.BATTLEMETRICS_ORGID,
+    banListId: process.env.BATTLEMETRICS_BANLISTID,
+    serverId: process.env.BATTLEMETRICS_SERVERID,
+    reasons: {
+      Masla: "Suspect is neutralized by the DP Anti-cheat (DPAC) system",
+      pepe_KMS: "Причина бана: не игрок Perm",
+    },
+    includeNote: true,
+  },
+  {
+    organizationId: process.env.BATTLEMETRICS_ORGID_2,
+    banListId: process.env.BATTLEMETRICS_BANLISTID_2,
+    serverId: process.env.BATTLEMETRICS_SERVERID_2,
+    reasons: {
+      Masla: "Причина бана: Читер Perm",
+      pepe_KMS: "Причина бана: не игрок Perm",
+    },
+    includeNote: false,
+  },
+];
 
 const client = new Client({
   intents: [
@@ -39,7 +57,7 @@ async function getPlayerIdBySteamId(steamId) {
       },
       {
         headers: {
-          Authorization: `Bearer ${BATTLEMETRICS_API_KEY}`,
+          Authorization: `Bearer ${process.env.BATTLEMETRICS_API_KEY}`,
           "Content-Type": "application/json",
         },
       }
@@ -51,7 +69,82 @@ async function getPlayerIdBySteamId(steamId) {
       return null;
     }
   } catch (error) {
+    console.error("Ошибка при получении playerId:", error);
     return null;
+  }
+}
+
+async function banPlayerInMultipleOrganizations(
+  steamId,
+  playerId,
+  emoji,
+  globalNote,
+  timestamp
+) {
+  for (const org of ORGANIZATIONS) {
+    const reason = org.reasons[emoji];
+    if (!reason) continue;
+
+    const banData = {
+      data: {
+        type: "ban",
+        attributes: {
+          timestamp: timestamp,
+          reason: reason,
+          expires: null,
+          identifiers: [
+            {
+              type: "steamID",
+              identifier: steamId,
+              manual: true,
+            },
+          ],
+          orgWide: true,
+          autoAddEnabled: true,
+          nativeEnabled: null,
+        },
+        relationships: {
+          server: {
+            data: { type: "server", id: org.serverId },
+          },
+          organization: {
+            data: { type: "organization", id: org.organizationId },
+          },
+          banList: {
+            data: { type: "banList", id: org.banListId },
+          },
+          user: {
+            data: { type: "user", id: process.env.BATTLEMETRICS_USERID },
+          },
+        },
+      },
+    };
+
+    if (org.includeNote && globalNote) {
+      banData.data.attributes.note = globalNote;
+    }
+
+    if (playerId) {
+      banData.data.relationships.player = {
+        data: { type: "player", id: playerId },
+      };
+    }
+
+    try {
+      await axios.post("https://api.battlemetrics.com/bans", banData, {
+        headers: {
+          Authorization: `Bearer ${process.env.BATTLEMETRICS_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      });
+      console.log(
+        `Игрок ${steamId} успешно забанен в организации ${org.organizationId}`
+      );
+    } catch (error) {
+      console.error(
+        `Ошибка при добавлении бана в организации ${org.organizationId}:", error`
+      );
+    }
   }
 }
 
@@ -99,62 +192,16 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
     const note = messageContent;
     const timestamp = new Date().toISOString();
-    let reason;
-    if (reaction.emoji.name === "Masla")
-      reason = "Suspect is neutralized by the DP Anti-cheat (DPAC) system";
-    if (reaction.emoji.name === "pepe_KMS")
-      reason = "Причина бана: не игрок Perm, by Melomory";
 
     for (const steamId of uniqueSteamIds) {
       const playerId = await getPlayerIdBySteamId(steamId);
-      const banData = {
-        data: {
-          type: "ban",
-          attributes: {
-            timestamp: timestamp,
-            reason: reason,
-            note: note,
-            expires: null,
-            identifiers: [
-              {
-                type: "steamID",
-                identifier: steamId,
-                manual: true,
-              },
-            ],
-            orgWide: true,
-            autoAddEnabled: true,
-            nativeEnabled: null,
-          },
-          relationships: {
-            server: {
-              data: { type: "server", id: SERVER_ID },
-            },
-            organization: {
-              data: { type: "organization", id: ORGANIZATION_ID },
-            },
-            banList: {
-              data: { type: "banList", id: BAN_LIST_ID },
-            },
-            user: {
-              data: { type: "user", id: USER_ID },
-            },
-          },
-        },
-      };
-
-      if (playerId) {
-        banData.data.relationships.player = {
-          data: { type: "player", id: playerId },
-        };
-      }
-
-      await axios.post("https://api.battlemetrics.com/bans", banData, {
-        headers: {
-          Authorization: `Bearer ${BATTLEMETRICS_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      });
+      await banPlayerInMultipleOrganizations(
+        steamId,
+        playerId,
+        reaction.emoji.name,
+        note,
+        timestamp
+      );
     }
   } catch (error) {
     console.error("Ошибка при обработке реакции:", error);
